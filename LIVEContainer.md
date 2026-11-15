@@ -1,0 +1,36 @@
+# ForceDuo inside LiveContainer
+
+This checkout adds experimental compatibility with the iOS [LiveContainer](https://github.com/LiveContainer/LiveContainer) app launcher. It is not a Docker image. Device functionality has not been verified; an IPA launching successfully does not establish that database access or patching works.
+
+## Changes
+
+ForceDuo detects LiveContainer's `LC_HOME_PATH` and dynamically asks `LCSharedUtils.appGroupID` for the host's real App Group. Guest App Groups are virtual folders and cannot be used for the underlying system container query. If no real host group is available, database access stops with an error. Native launches retain the original group.
+
+The access helper renames the existing App Group cache aside rather than deleting it, then restores it after the query, including failed queries. This matters because the host group can contain LiveContainer or SideStore data. Force quitting during the query can still interrupt restoration: with ForceDuo stopped, preserve any `Library/Caches.ForceDuo-<UUID>` directory and restore it to `Library/Caches` only after checking for newly created cache contents. Do not delete backups or run another copy concurrently.
+
+The implementation follows LiveContainer's [guest file-manager hook](https://github.com/LiveContainer/LiveContainer/blob/main/LiveContainer/Tweaks/NSFileManager%2BGuestHooks.m) and [host group resolver](https://github.com/LiveContainer/LiveContainer/blob/main/LiveContainer/LCSharedUtils.m).
+
+## Build and import
+
+On a Mac with Xcode and an iOS 27 SDK, run:
+
+```sh
+./scripts/build-livecontainer.sh
+```
+
+Import `dist/ForceDuo-LiveContainer.ipa` with LiveContainer's plus button. The IPA is unsigned for LiveContainer to process with its own signing setup. Run ForceDuo alone, without another ForceDuo guest or native instance. If diagnostic file selection does not work, enable LiveContainer's per-app “Fix File Picker” option.
+
+The upstream project targets iOS 27.0 and understands only its explicitly listed LaunchServices record layouts. This change does not add support for other database layouts or repair the underlying `worse_query` vulnerability on patched OS versions. A host without a real App Group cannot provide the required access.
+
+## Required device verification
+
+Before considering this usable on a particular device:
+
+1. Confirm the app launches and logs `LiveContainer` with the real host access group.
+2. Load the installed-app list and export diagnostics. Confirm the database layout is recognized.
+3. Confirm the original host cache and its contents are restored after successful and failed access attempts.
+4. On a backed-up test device, enable one legacy app, relaunch it, and verify the intended UI change.
+5. Revert that app and verify both its original SDK value and UI behavior return.
+6. Restart LiveContainer and confirm selections, backups, and diagnostic exports persist.
+
+No macOS toolchain or connected test iPhone was available in the Linux workspace used to prepare these changes. Neither compilation nor these device checks have been completed.

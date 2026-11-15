@@ -13,6 +13,23 @@
 #include <objc/runtime.h>
 
 NSString *const FDAppGroup = @"group.com.34306.forceDuo";
+// Guest groups are virtualized by LiveContainer. Only its host group can be
+// used with containermanagerd. Resolve dynamically to keep native installs independent.
+static NSString *fdAccessGroup(void) {
+    if (!getenv("LC_HOME_PATH")) return FDAppGroup;
+    Class host = NSClassFromString(@"LCSharedUtils");
+    SEL selector = NSSelectorFromString(@"appGroupID");
+    if (![host respondsToSelector:selector]) return nil;
+    id group = ((id (*)(id, SEL))objc_msgSend)(host, selector);
+    if (![group isKindOfClass:NSString.class] || ![group hasPrefix:@"group."]) return nil;
+    NSURL *root = [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:group];
+    // Reject virtual guest folders: they cannot satisfy the system query.
+    NSString *path = root.path.stringByStandardizingPath;
+    if (![path hasPrefix:@"/private/var/mobile/Containers/Shared/AppGroup/"] &&
+        ![path hasPrefix:@"/var/mobile/Containers/Shared/AppGroup/"]) return nil;
+    return group;
+}
+
 NSErrorDomain const FDErrorDomain = @"ForceDuo";
 
 // LaunchServices "Bundle" record layouts (CoreServicesStore v2), keyed by record size.
@@ -371,11 +388,11 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
 }
 
 - (FDAccess *)accessDirectory:(NSString *)directory quiet:(BOOL)quiet {
-    int64_t token = worse_query(directory, FDAppGroup, false, true);
+    int64_t token = worse_query(directory, fdAccessGroup(), false, true);
     if (quiet) {
-        if (token < 0) token = worse_query(directory, FDAppGroup, true, true);
+        if (token < 0) token = worse_query(directory, fdAccessGroup(), true, true);
     } else if (token < 0) {
-        int64_t alt = worse_query(directory, FDAppGroup, true, true);
+        int64_t alt = worse_query(directory, fdAccessGroup(), true, true);
         [_log appendFormat:@"  %@ → token %lld / alt %lld\n", directory, token, alt];
         token = alt;
     } else {
@@ -415,6 +432,12 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
 }
 
 - (FDAccess *)openStoreAccess:(NSError **)error {
+    NSString *group = fdAccessGroup();
+    if (!group) {
+        if (error) *error = fdError(@"LiveContainer did not expose a real host App Group. Use a supported LiveContainer installation with App Group access.");
+        return nil;
+    }
+    [_log appendFormat:@"Access group: %@ (%@)\n", group, getenv("LC_HOME_PATH") ? @"LiveContainer" : @"native"];
     NSMutableOrderedSet<NSString *> *candidates = [NSMutableOrderedSet orderedSet];
     NSString *saved = [NSUserDefaults.standardUserDefaults stringForKey:kStoreDirKey];
     if (saved) [candidates addObject:saved];
@@ -437,8 +460,8 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
     }
     for (NSString *root in @[@"/private/var/mobile/Containers/Data/InternalDaemon",
                               @"/private/var/containers/Data/System"]) {
-        int64_t token = worse_query(root, FDAppGroup, false, true);
-        if (token < 0) token = worse_query(root, FDAppGroup, true, true);
+        int64_t token = worse_query(root, fdAccessGroup(), false, true);
+        if (token < 0) token = worse_query(root, fdAccessGroup(), true, true);
         NSError *listError = nil;
         NSArray<NSString *> *names = [NSFileManager.defaultManager contentsOfDirectoryAtPath:root error:&listError];
         worse_query_release(token);

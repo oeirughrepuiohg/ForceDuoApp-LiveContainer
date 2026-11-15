@@ -15,3 +15,7 @@ Demo (Apple Store app now support iPhone Duo)!
 - [worse_query](https://github.com/forcequitOS/worse_query)
 - that reddit post guy
 - me
+
+# LiveContainer compatibility
+
+Experimental iOS LiveContainer support and IPA build instructions are documented in [LIVEContainer.md](LIVEContainer.md). Device verification is still required.

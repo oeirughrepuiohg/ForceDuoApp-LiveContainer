@@ -26,6 +26,8 @@
 #import <Foundation/Foundation.h>
 #include <dlfcn.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
 #include <xpc/xpc.h>
 #include <sys/stat.h>
 #include "worse_query.h"
@@ -41,22 +43,9 @@ typedef char *(*container_copy_sandbox_token_fn)(void *);
 typedef int64_t (*sandbox_extension_consume_fn)(const char *);
 typedef int (*sandbox_extension_release_fn)(int64_t);
 
-// Remove symlink and recreate Caches directory
-static void clean_symlink(NSString *group) {
-    if (group != NULL) {
-        NSFileManager *files = [NSFileManager defaultManager];
-        NSURL *groupRoot = [files containerURLForSecurityApplicationGroupIdentifier: group];
-        if (groupRoot) {
-            NSURL *caches = [groupRoot URLByAppendingPathComponent: @"Library/Caches"];
-            [files removeItemAtURL: caches error: nil];
-            [files createDirectoryAtURL: caches withIntermediateDirectories: false attributes: nil error: nil];
-        }
-    }
-    return;
-}
-
 // So, who's ready for round two?
 int64_t worse_query(NSString *target, NSString *group, bool alt_flags, bool create_dir) {
+    if (!group.length) return -1;
     // Check if the target exists
     if (!create_dir) {
         struct stat st;
@@ -107,36 +96,60 @@ int64_t worse_query(NSString *target, NSString *group, bool alt_flags, bool crea
         query_set_flags(query, 0x0000008000000000ULL);
     }
     
-    // Set up symlink
-    [files removeItemAtPath: caches error: nil];
-    if ([files createSymbolicLinkAtPath: caches withDestinationPath: target error: nil] == false) {
-        dlclose(mgr);
-        return -4; // Failed to create symlink
+    // The group may belong to the LiveContainer host. Never delete its cache.
+    // Rename it aside and restore the same directory on every normal exit.
+    // An interrupted previous attempt must be recovered before another query.
+    NSArray<NSString *> *siblings = [files contentsOfDirectoryAtPath:caches.stringByDeletingLastPathComponent error:nil];
+    for (NSString *name in siblings) {
+        if ([name hasPrefix:@"Caches.ForceDuo-"]) {
+            query_free(query);
+            dlclose(mgr);
+            return -7;
+        }
     }
-    
-    // Send our query over
-    void *result = query_get_single_result(query);
-    if (!result) {
+    NSString *backup = [caches stringByAppendingFormat:@".ForceDuo-%@", NSUUID.UUID.UUIDString];
+    struct stat original;
+    BOOL hadCache = lstat(caches.fileSystemRepresentation, &original) == 0;
+    if ((!hadCache && errno != ENOENT) || (hadCache && !S_ISDIR(original.st_mode))) {
         query_free(query);
         dlclose(mgr);
-        clean_symlink(group);
-        return -5; // Query rejected by containermanagerd
+        return -4;
     }
-    char *token = copy_sandbox_token(result);
-    if (!token) {
+    if (hadCache && ![files moveItemAtPath:caches toPath:backup error:nil]) {
         query_free(query);
         dlclose(mgr);
-        clean_symlink(group);
-        return -6; // Kernel refused to issue a sandbox extension
+        return -4;
     }
-    
-    // Consume sandbox extension and clean up
-    int64_t handle = consume_extension(token);
-    query_free(query);
-    free(token);
-    dlclose(mgr);
-    clean_symlink(group);
-    
+    int64_t handle = -4;
+    BOOL linked = NO;
+    @try {
+        linked = [files createSymbolicLinkAtPath:caches withDestinationPath:target error:nil];
+        if (linked) {
+            void *result = query_get_single_result(query);
+            handle = -5;
+            if (result) {
+                char *token = copy_sandbox_token(result);
+                handle = -6;
+                if (token) {
+                    handle = consume_extension(token);
+                    free(token);
+                }
+            }
+        }
+    } @finally {
+        // unlink only removes our link, never recursively removes host data.
+        if (linked) unlink(caches.fileSystemRepresentation);
+        BOOL restored = hadCache
+            ? [files moveItemAtPath:backup toPath:caches error:nil]
+            : [files createDirectoryAtPath:caches withIntermediateDirectories:NO attributes:nil error:nil];
+        if (!restored) {
+            worse_query_release(handle);
+            handle = -7; // Backup remains intact; do not continue to database writes.
+        }
+        query_free(query);
+        dlclose(mgr);
+    }
+
     return handle;
 }
 

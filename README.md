@@ -8,4 +8,4 @@ Then the bug (worse_query got burned by forcequit, yeah, i also found it on Aug 
 
 So this is the release post!
 Demo (Apple Store app now support iPhone Duo)!
-[demo](IMG_1038.PNG)
+![demo](IMG_1038.PNG)

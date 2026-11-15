@@ -58,3 +58,35 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+  release:
+    name: Publish IPA release
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download built IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: ForceDuo-LiveContainer-${{ github.run_number }}
+          path: dist
+
+      - name: Create release with IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_RUN: ${{ github.run_number }}
+          RELEASE_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="build-${RELEASE_RUN}-${RELEASE_ATTEMPT}"
+          gh release create "$tag" dist/ForceDuo-LiveContainer.ipa \
+            --target "$RELEASE_COMMIT" \
+            --title "ForceDuo LiveContainer build ${RELEASE_RUN}.${RELEASE_ATTEMPT}" \
+            --generate-notes \
+            --latest

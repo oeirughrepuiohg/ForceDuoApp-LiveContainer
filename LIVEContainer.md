@@ -46,3 +46,9 @@ The **Build LiveContainer IPA** workflow builds on GitHub's `xcode-27` Mac runne
 5. Extract the downloaded ZIP and import the IPA into LiveContainer.
 
 No signing certificates, Apple developer credentials, or repository secrets are required. Artifacts are retained for 30 days. The workflow checks the selected SDK, builds the app, and checks ZIP integrity; it does not run an iPhone compatibility test.
+
+## Automatic releases
+
+After a successful build on `main` (push or manual run), a separate job publishes a GitHub Release with `ForceDuo-LiveContainer.ipa` attached directly. Pull request builds and manual runs on other branches do not publish releases. The release is marked as latest and tagged `build-<run number>-<attempt>` at the exact commit that was built. Reruns get a new tag rather than replacing an existing release.
+
+Download the IPA directly from the repository's **Releases** page; no artifact ZIP extraction is needed. Releases remain available until deleted, independently of the 30-day Actions artifact retention. Publishing uses the built-in `GITHUB_TOKEN`, with write access limited to the release job, so no personal token is needed. Repository or organization policies must allow workflow tokens to write repository contents.

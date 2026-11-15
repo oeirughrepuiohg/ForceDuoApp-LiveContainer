@@ -1,0 +1,37 @@
+name: ForceDuo
+options:
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "27.0"
+targets:
+  ForceDuo:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS:
+          enabled: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.34306.forceDuo
+        DEVELOPMENT_TEAM: 76QDYF5NP6
+        CODE_SIGN_STYLE: Automatic
+        REGISTER_APP_GROUPS: YES
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Force Duo
+        INFOPLIST_KEY_CFBundleDevelopmentRegion: en
+        LOCALIZATION_PREFERS_STRING_CATALOGS: NO
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UIFileSharingEnabled: YES
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_ENTITLEMENTS: ForceDuo.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Bridge.h
+        CLANG_ENABLE_OBJC_ARC: YES

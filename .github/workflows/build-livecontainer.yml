@@ -1,0 +1,60 @@
+name: Build LiveContainer IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ForceDuoApp/**'
+      - 'scripts/build-livecontainer.sh'
+      - '.github/workflows/build-livecontainer.yml'
+  pull_request:
+    paths:
+      - 'ForceDuoApp/**'
+      - 'scripts/build-livecontainer.sh'
+      - '.github/workflows/build-livecontainer.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: livecontainer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check Apple toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "iOS SDK: $sdk_version"
+          if [[ "${sdk_version%%.*}" -lt 27 ]]; then
+            echo '::error::ForceDuo requires an iOS 27 SDK or newer.'
+            exit 1
+          fi
+
+      - name: Build and package
+        run: bash scripts/build-livecontainer.sh
+
+      - name: Verify IPA archive
+        run: unzip -t dist/ForceDuo-LiveContainer.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: ForceDuo-LiveContainer-${{ github.run_number }}
+          path: dist/ForceDuo-LiveContainer.ipa
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

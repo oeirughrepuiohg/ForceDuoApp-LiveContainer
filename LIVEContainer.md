@@ -34,3 +34,15 @@ Before considering this usable on a particular device:
 6. Restart LiveContainer and confirm selections, backups, and diagnostic exports persist.
 
 No macOS toolchain or connected test iPhone was available in the Linux workspace used to prepare these changes. Neither compilation nor these device checks have been completed.
+
+## Build with GitHub Actions
+
+The **Build LiveContainer IPA** workflow builds on GitHub's `xcode-27` Mac runner using the same script as the local build. It runs automatically when app, build script, or workflow changes are pushed to `main`, and for pull requests. You can also start it manually:
+
+1. Push the workflow to your fork's `main` branch.
+2. Open the repository's **Actions** tab. If workflows are disabled for the fork, enable them.
+3. Select **Build LiveContainer IPA**, then **Run workflow** on `main`.
+4. Open the successful run and download **ForceDuo-LiveContainer-<run number>** under **Artifacts**.
+5. Extract the downloaded ZIP and import the IPA into LiveContainer.
+
+No signing certificates, Apple developer credentials, or repository secrets are required. Artifacts are retained for 30 days. The workflow checks the selected SDK, builds the app, and checks ZIP integrity; it does not run an iPhone compatibility test.

@@ -58,3 +58,7 @@
 "Wrote and verified %lu app(s):\n%@" = "Đã ghi và xác minh %lu app:\n%@";
 "Credits" = "Ghi công";
 "Sandbox extension PoC by Taj C (forcequit), licensed under GPL-3.0." = "PoC sandbox extension của Taj C (forcequit), cấp phép GPL-3.0.";
+"This copy of Force Duo was signed without an App Group, so it cannot reach the LaunchServices cache. Re-sign it with App Groups enabled (AltStore/SideStore do this automatically; in Sideloadly keep the app's entitlements)." = "Bản Force Duo này được sign mà không có App Group nên không truy cập được cache LaunchServices. Hãy sign lại và bật App Groups (AltStore/SideStore tự làm việc này; với Sideloadly hãy giữ nguyên entitlements của app).";
+"Found the LaunchServices cache but iOS refused access to it (%@)." = "Đã tìm thấy cache LaunchServices nhưng iOS từ chối cấp quyền truy cập (%@).";
+"Could not locate the LaunchServices cache: the search timed out before reaching it." = "Không tìm thấy cache LaunchServices: quá thời gian tìm kiếm trước khi tới được nó.";
+"Could not locate the LaunchServices cache on this device." = "Không tìm thấy cache LaunchServices trên thiết bị này.";

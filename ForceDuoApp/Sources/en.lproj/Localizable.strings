@@ -58,3 +58,7 @@
 "Wrote and verified %lu app(s):\n%@" = "Wrote and verified %lu app(s):\n%@";
 "Credits" = "Credits";
 "Sandbox extension PoC by Taj C (forcequit), licensed under GPL-3.0." = "Sandbox extension PoC by Taj C (forcequit), licensed under GPL-3.0.";
+"This copy of Force Duo was signed without an App Group, so it cannot reach the LaunchServices cache. Re-sign it with App Groups enabled (AltStore/SideStore do this automatically; in Sideloadly keep the app's entitlements)." = "This copy of Force Duo was signed without an App Group, so it cannot reach the LaunchServices cache. Re-sign it with App Groups enabled (AltStore/SideStore do this automatically; in Sideloadly keep the app's entitlements).";
+"Found the LaunchServices cache but iOS refused access to it (%@)." = "Found the LaunchServices cache but iOS refused access to it (%@).";
+"Could not locate the LaunchServices cache: the search timed out before reaching it." = "Could not locate the LaunchServices cache: the search timed out before reaching it.";
+"Could not locate the LaunchServices cache on this device." = "Could not locate the LaunchServices cache on this device.";

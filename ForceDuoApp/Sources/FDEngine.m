@@ -1,5 +1,6 @@
 #import "FDEngine.h"
 #import "worse_query.h"
+#import "FDSandbox.h"
 #include <dlfcn.h>
 #include <mach/mach.h>
 #include <fcntl.h>
@@ -12,7 +13,6 @@
 #include <objc/message.h>
 #include <objc/runtime.h>
 
-NSString *const FDAppGroup = @"group.com.34306.forceDuo";
 NSErrorDomain const FDErrorDomain = @"ForceDuo";
 
 // LaunchServices "Bundle" record layouts (CoreServicesStore v2), keyed by record size.
@@ -267,22 +267,49 @@ static NSString *lsdContainerCaches(uint64_t kind) {
     return [path stringByAppendingPathComponent:@"Library/Caches"];
 }
 
-static NSArray<NSString *> *inodeScanStoreDirectories(NSMutableString *log) {
+typedef NS_ENUM(NSInteger, FDScanOutcome) { FDScanFound, FDScanTimedOut, FDScanExhausted, FDScanUnavailable };
+
+// APFS hands out inode numbers roughly in creation order and lsd rewrites its store regularly,
+// so the store sits close to the newest inodes. A fresh temp file gives the current high-water
+// mark; scanning downward from just above it reaches the store in well under a second instead
+// of walking up from inode 16 (which timed out before 9.5M inodes on iOS 27.3 beta).
+static NSArray<NSString *> *inodeScanStoreDirectories(NSMutableString *log, FDScanOutcome *outcome) {
+    *outcome = FDScanUnavailable;
     struct statfs volume;
     if (statfs(NSHomeDirectory().fileSystemRepresentation, &volume) != 0) return @[];
+    uint64_t top = 0;
+    NSString *probe = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    int fd = open(probe.fileSystemRepresentation, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0600);
+    if (fd >= 0) {
+        struct stat st;
+        if (fstat(fd, &st) == 0) top = st.st_ino;
+        close(fd);
+        unlink(probe.fileSystemRepresentation);
+    }
+    const uint64_t margin = 262144, fallbackTop = 40000000, afterHit = 262144;
+    uint64_t start = top ? top + margin : fallbackTop;
     NSMutableOrderedSet *dirs = [NSMutableOrderedSet orderedSet];
     char path[PATH_MAX];
-    NSTimeInterval start = NSProcessInfo.processInfo.systemUptime;
-    unsigned inode = 16;
-    for (; inode <= 40000000; ++inode) {
-        if ((inode & 4095) == 0 && NSProcessInfo.processInfo.systemUptime - start > 20.0) break;
+    NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
+    uint64_t inode = start, stopAt = 16;
+    *outcome = FDScanExhausted;
+    for (; inode >= stopAt; --inode) {
+        if ((inode & 4095) == 0 && NSProcessInfo.processInfo.systemUptime - began > 20.0) {
+            *outcome = dirs.count ? FDScanFound : FDScanTimedOut;
+            break;
+        }
         if (fsgetpath(path, sizeof(path), &volume.f_fsid, inode) <= 0) continue;
         if (!strstr(path, "LaunchServices-") || !strstr(path, "-v2.csstore")) continue;
         NSString *match = [NSString stringWithUTF8String:path];
         if ([match hasPrefix:@"/var/"]) match = [@"/private" stringByAppendingString:match];
-        if (isActiveStoreName(match.lastPathComponent)) [dirs addObject:match.stringByDeletingLastPathComponent];
+        if (!isActiveStoreName(match.lastPathComponent)) continue;
+        if (!dirs.count) stopAt = inode > afterHit + 16 ? inode - afterHit : 16; // look a bit further for siblings
+        [dirs addObject:match.stringByDeletingLastPathComponent];
     }
-    [log appendFormat:@"Inode scan up to %u: %lu directories.\n", inode, (unsigned long)dirs.count];
+    if (dirs.count) *outcome = FDScanFound;
+    [log appendFormat:@"Inode scan down from %llu (probe inode %llu) to %llu in %.2fs: %lu directories%@.\n",
+        start, top, inode, NSProcessInfo.processInfo.systemUptime - began, (unsigned long)dirs.count,
+        *outcome == FDScanTimedOut ? @", timed out" : @""];
     return dirs.array;
 }
 
@@ -371,16 +398,9 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
 }
 
 - (FDAccess *)accessDirectory:(NSString *)directory quiet:(BOOL)quiet {
-    int64_t token = worse_query(directory, FDAppGroup, false, true);
-    if (quiet) {
-        if (token < 0) token = worse_query(directory, FDAppGroup, true, true);
-    } else if (token < 0) {
-        int64_t alt = worse_query(directory, FDAppGroup, true, true);
-        [_log appendFormat:@"  %@ → token %lld / alt %lld\n", directory, token, alt];
-        token = alt;
-    } else {
-        [_log appendFormat:@"  %@ → token %lld\n", directory, token];
-    }
+    NSString *method = nil;
+    int64_t token = FDGrantAccess(directory, &method);
+    if (!quiet) [_log appendFormat:@"  %@ → token %lld (%@)\n", directory, token, method];
     if (token < 0) return nil;
     int dir = open(directory.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (dir < 0) {
@@ -415,6 +435,12 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
 }
 
 - (FDAccess *)openStoreAccess:(NSError **)error {
+    [_log appendFormat:@"App Groups entitled: %@ → using %@\n",
+        [FDEntitledAppGroups() componentsJoinedByString:@", "] ?: @"-", FDResolvedAppGroup() ?: @"(none)"];
+    if (!FDResolvedAppGroup()) {
+        if (error) *error = fdError(NSLocalizedString(@"This copy of Force Duo was signed without an App Group, so it cannot reach the LaunchServices cache. Re-sign it with App Groups enabled (AltStore/SideStore do this automatically; in Sideloadly keep the app's entitlements).", nil));
+        return nil;
+    }
     NSMutableOrderedSet<NSString *> *candidates = [NSMutableOrderedSet orderedSet];
     NSString *saved = [NSUserDefaults.standardUserDefaults stringForKey:kStoreDirKey];
     if (saved) [candidates addObject:saved];
@@ -437,8 +463,7 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
     }
     for (NSString *root in @[@"/private/var/mobile/Containers/Data/InternalDaemon",
                               @"/private/var/containers/Data/System"]) {
-        int64_t token = worse_query(root, FDAppGroup, false, true);
-        if (token < 0) token = worse_query(root, FDAppGroup, true, true);
+        int64_t token = FDGrantAccess(root, NULL);
         NSError *listError = nil;
         NSArray<NSString *> *names = [NSFileManager.defaultManager contentsOfDirectoryAtPath:root error:&listError];
         worse_query_release(token);
@@ -453,12 +478,24 @@ static NSArray<NSString *> *mappedStoreDirectories(NSMutableString *log) {
             if (access) return [self rememberAccess:access];
         }
     }
-    for (NSString *directory in inodeScanStoreDirectories(_log)) {
-        if ([candidates containsObject:directory]) continue;
+    FDScanOutcome outcome;
+    NSArray<NSString *> *scanned = inodeScanStoreDirectories(_log, &outcome);
+    NSMutableArray<NSString *> *denied = [NSMutableArray array];
+    for (NSString *directory in scanned) {
         FDAccess *access = [self accessDirectory:directory];
         if (access) return [self rememberAccess:access];
+        [denied addObject:directory];
     }
-    if (error) *error = fdError(NSLocalizedString(@"Could not find or open the LaunchServices cache (iOS refused access).", nil));
+    NSString *message;
+    if (denied.count) {
+        message = [NSString stringWithFormat:NSLocalizedString(@"Found the LaunchServices cache but iOS refused access to it (%@).", nil),
+                   denied.firstObject];
+    } else if (outcome == FDScanTimedOut) {
+        message = NSLocalizedString(@"Could not locate the LaunchServices cache: the search timed out before reaching it.", nil);
+    } else {
+        message = NSLocalizedString(@"Could not locate the LaunchServices cache on this device.", nil);
+    }
+    if (error) *error = fdError(message);
     return nil;
 }
 

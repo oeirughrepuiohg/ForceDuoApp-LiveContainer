@@ -6,6 +6,7 @@ struct ForceDuoApp: App {
 
     init() {
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("--fd-rescan") { UserDefaults.standard.removeObject(forKey: "FDStoreDirectory") }
         if let arg = args.first(where: { $0.hasPrefix("--fd-dryrun=") }) {
             let id = String(arg.dropFirst("--fd-dryrun=".count))
             DispatchQueue.global().async {
@@ -18,6 +19,15 @@ struct ForceDuoApp: App {
                 FileHandle.standardError.write(Data(("FD_REPORT\n" + text + "\n" + FDEngine.shared.lastLog + "\nEND_FD_REPORT\n").utf8))
                 exit(0)
             }
+        }
+        if let arg = args.first(where: { $0.hasPrefix("--fd-probe=") }) {
+            let path = String(arg.dropFirst("--fd-probe=".count))
+            var method: NSString?
+            let handle = FDGrantAccess(path, &method)
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: path).count) ?? -1
+            let text = "group=\(FDResolvedAppGroup() ?? "nil") handle=\(handle) method=\(method ?? "-") entries=\(entries)\n" + FDLastGrantDiagnostic()
+            FileHandle.standardError.write(Data(("FD_REPORT\n" + text + "\nEND_FD_REPORT\n").utf8))
+            exit(0)
         }
         if args.contains("--fd-dump") {
             DispatchQueue.global().async {
@@ -35,7 +45,10 @@ struct ForceDuoApp: App {
         WindowGroup {
             RootView()
                 .environment(catalog)
-                .task { await catalog.reload() }
+                .task {
+                    let debugRun = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("--fd-dryrun=") || $0 == "--fd-dump" || $0.hasPrefix("--fd-probe=") }
+                    if !debugRun { await catalog.reload() }
+                }
         }
     }
 }

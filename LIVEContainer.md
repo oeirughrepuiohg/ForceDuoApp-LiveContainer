@@ -4,7 +4,7 @@ This checkout adds experimental compatibility with the iOS [LiveContainer](https
 
 ## Changes
 
-ForceDuo detects LiveContainer's `LC_HOME_PATH` and dynamically asks `LCSharedUtils.appGroupID` for the host's real App Group. Guest App Groups are virtual folders and cannot be used for the underlying system container query. If no real host group is available, database access stops with an error. Native launches retain the original group.
+ForceDuo detects LiveContainer's `LC_HOME_PATH` and dynamically asks `LCSharedUtils.appGroupID` for the host's real App Group. Guest App Groups are virtual folders and cannot be used for the underlying system container query. If no real host group is available, database access stops with an error. Native launches use upstream's entitlement-based group resolution, including group IDs rewritten by a signer.
 
 The access helper renames the existing App Group cache aside rather than deleting it, then restores it after the query, including failed queries. This matters because the host group can contain LiveContainer or SideStore data. Force quitting during the query can still interrupt restoration: with ForceDuo stopped, preserve any `Library/Caches.ForceDuo-<UUID>` directory and restore it to `Library/Caches` only after checking for newly created cache contents. Do not delete backups or run another copy concurrently.
 
@@ -26,7 +26,7 @@ The upstream project targets iOS 27.0 and understands only its explicitly listed
 
 Before considering this usable on a particular device:
 
-1. Confirm the app launches and logs `LiveContainer` with the real host access group.
+1. Confirm the app launches and its `App Groups entitled` diagnostic reports the real host access group after `using`.
 2. Load the installed-app list and export diagnostics. Confirm the database layout is recognized.
 3. Confirm the original host cache and its contents are restored after successful and failed access attempts.
 4. On a backed-up test device, enable one legacy app, relaunch it, and verify the intended UI change.

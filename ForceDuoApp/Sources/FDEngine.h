@@ -3,7 +3,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-extern NSString *const FDAppGroup;
 extern NSErrorDomain const FDErrorDomain;
 
 @interface FDAppRecord : NSObject
